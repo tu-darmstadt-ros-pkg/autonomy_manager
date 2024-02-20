@@ -1,0 +1,7 @@
+# Each e-stop name in e_stop_names needs to be assigned to at least one <e_stop>_topic !
+autonomy_manager:
+  ros__parameters:
+
+    twist_topic: "cmd_vel"
+    twist_nodes: ["test_1", "test_2"] # nodes that publish to twist_topic
+    twist_autonomy_types: ["TELEOP", "AUTONOMY"] # the autonomy types of the nodes that publish to twist_topic
