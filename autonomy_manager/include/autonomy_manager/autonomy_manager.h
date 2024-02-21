@@ -12,46 +12,43 @@
 namespace autonomy_manager {
     using std::placeholders::_1;
     using std::placeholders::_2;
-    enum class AutonomyType {
-        TELEOP,
-        SEMI_AUTONOMY,
-        AUTONOMY,
-        UNKNOWN
-    };
 
-    AutonomyType fromString(const std::string &str) {
+
+    autonomy_manager_msgs::msg::AutonomyMode fromString(const std::string &str) {
         std::string str_lower;
         std::transform(str.begin(), str.end(), std::back_inserter(str_lower),
                        [](unsigned char c) { return std::tolower(c); });
+        autonomy_manager_msgs::msg::AutonomyMode autonomyMode;
         if (str_lower == "teleop") {
-            return AutonomyType::TELEOP;
+            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED;
         } else if (str_lower == "semi_autonomy") {
-            return AutonomyType::SEMI_AUTONOMY;
+            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS;
         } else if (str_lower == "autonomy") {
-            return AutonomyType::AUTONOMY;
-        }else if (str_lower == "unknown") {
-            return AutonomyType::UNKNOWN;
+            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS;
+        } else if (str_lower == "unknown") {
+            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
         } else {
             throw std::invalid_argument("Invalid autonomy type: " + str);
         }
+        return autonomyMode;
     }
 
-    std::string toString(AutonomyType autonomyType) {
-        switch (autonomyType) {
-            case AutonomyType::TELEOP:
+    std::string toString(const autonomy_manager_msgs::msg::AutonomyMode& autonomyMode) {
+        switch (autonomyMode.autonomy_mode) {
+            case autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED:
                 return "teleop";
-            case AutonomyType::SEMI_AUTONOMY:
+            case autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS:
                 return "semi_autonomy";
-            case AutonomyType::AUTONOMY:
+            case autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS:
                 return "autonomy";
-            case AutonomyType::UNKNOWN:
+            case autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN:
                 return "unknown";
         }
         return "not_found";
     }
 
     struct AutonomyTopicInfo {
-        std::map<std::string, AutonomyType> autonomyTypePerNode;
+        std::map<std::string, autonomy_manager_msgs::msg::AutonomyMode> autonomyTypePerNode;
     };
 
     class AutonomyManager : public rclcpp::Node {
@@ -177,25 +174,11 @@ namespace autonomy_manager {
                 return;
             }
             // get the required autonomy type for the node
-            AutonomyType requiredAutonomyType = autonomyTopicInfo_[topic].autonomyTypePerNode[node_name];
-            if (requiredAutonomyType != currentAutonomyType_) {
+            autonomy_manager_msgs::msg::AutonomyMode requiredAutonomyType = autonomyTopicInfo_[topic].autonomyTypePerNode[node_name];
+            if (requiredAutonomyType.autonomy_mode != currentAutonomyMode.autonomy_mode) {
                 // if the required autonomy type is different from the current autonomy type, publish the new autonomy type
-                autonomy_manager_msgs::msg::AutonomyMode msg;
-                switch (requiredAutonomyType) {
-                    case AutonomyType::TELEOP:
-                        msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED;
-                        break;
-                    case AutonomyType::SEMI_AUTONOMY:
-                        msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS;
-                        break;
-                    case AutonomyType::AUTONOMY:
-                        msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS;
-                        break;
-                    default:
-                        msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
-                }
-                autonomyPublisher_->publish(msg);
-                currentAutonomyType_ = requiredAutonomyType;
+                autonomyPublisher_->publish(requiredAutonomyType);
+                currentAutonomyMode = requiredAutonomyType;
             }
         }
 
@@ -204,7 +187,7 @@ namespace autonomy_manager {
         std::map<std::string, rclcpp::SubscriptionBase::SharedPtr> subscriptions_; // map of subscriptions per topic name
         std::map<std::string, AutonomyTopicInfo> autonomyTopicInfo_; // map of autonomy types per NodeName per topic
         rclcpp::Publisher<autonomy_manager_msgs::msg::AutonomyMode>::SharedPtr autonomyPublisher_;
-        AutonomyType currentAutonomyType_ = AutonomyType::UNKNOWN;
+        autonomy_manager_msgs::msg::AutonomyMode currentAutonomyMode;
     };
 
 } // autonomy_manager
