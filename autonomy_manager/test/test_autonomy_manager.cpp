@@ -102,6 +102,7 @@ protected:
 };
 
 TEST_F(AutonomyManagerTest, TestStartUp) {
+    // without receiving a cmd_vel message, the autonomy mode should be "unknown"
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode, autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
 }
 

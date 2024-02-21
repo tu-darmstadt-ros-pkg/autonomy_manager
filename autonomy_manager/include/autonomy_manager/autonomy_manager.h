@@ -6,50 +6,13 @@
 #define HECTOR_ROBOT_BASE_NODE_AUTONOMYMANAGER_H
 
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/twist.hpp>
+#include <autonomy_manager/types.h>
 #include <autonomy_manager_msgs/msg/autonomy_mode.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 
 namespace autonomy_manager {
     using std::placeholders::_1;
     using std::placeholders::_2;
-
-
-    autonomy_manager_msgs::msg::AutonomyMode fromString(const std::string &str) {
-        std::string str_lower;
-        std::transform(str.begin(), str.end(), std::back_inserter(str_lower),
-                       [](unsigned char c) { return std::tolower(c); });
-        autonomy_manager_msgs::msg::AutonomyMode autonomyMode;
-        if (str_lower == "teleop") {
-            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED;
-        } else if (str_lower == "semi_autonomy") {
-            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS;
-        } else if (str_lower == "autonomy") {
-            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS;
-        } else if (str_lower == "unknown") {
-            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
-        } else {
-            throw std::invalid_argument("Invalid autonomy type: " + str);
-        }
-        return autonomyMode;
-    }
-
-    std::string toString(const autonomy_manager_msgs::msg::AutonomyMode& autonomyMode) {
-        switch (autonomyMode.autonomy_mode) {
-            case autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED:
-                return "teleop";
-            case autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS:
-                return "semi_autonomy";
-            case autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS:
-                return "autonomy";
-            case autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN:
-                return "unknown";
-        }
-        return "not_found";
-    }
-
-    struct AutonomyTopicInfo {
-        std::map<std::string, autonomy_manager_msgs::msg::AutonomyMode> autonomyTypePerNode;
-    };
 
     class AutonomyManager : public rclcpp::Node {
     public:
@@ -87,6 +50,7 @@ namespace autonomy_manager {
                         twist_autonomy_types[i]);
             }
             addSubscription<geometry_msgs::msg::Twist>(twist_topic);
+
             //TODO: add subscriptions for other topics (also adapt the config file) [e.g. topics for flexbe, etc.]
 
         }
