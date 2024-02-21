@@ -9,6 +9,7 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(autonomy_manager_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(ament_cmake_gtest REQUIRED)
 set(CMAKE_CXX_STANDARD 14)
 
 ###########
@@ -42,6 +43,14 @@ ament_target_dependencies(${PROJECT_NAME}_node
         "geometry_msgs"
         )
 #target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
+
+# Add the test executable
+#add_executable(${PROJECT_NAME}_gtest test/test_autonomy_manager.cpp)
+# Link the test executable to the library
+
+# Add the test
+ament_add_gtest(${PROJECT_NAME}_gtest test/test_autonomy_manager.cpp)
+target_link_libraries(${PROJECT_NAME}_gtest ${PROJECT_NAME})
 
 #############
 ## Install ##

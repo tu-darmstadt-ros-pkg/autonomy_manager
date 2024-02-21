@@ -1,4 +1,3 @@
-# Each e-stop name in e_stop_names needs to be assigned to at least one <e_stop>_topic !
 autonomy_manager:
   ros__parameters:
 

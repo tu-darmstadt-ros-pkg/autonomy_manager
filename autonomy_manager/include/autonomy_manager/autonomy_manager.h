@@ -18,20 +18,39 @@ namespace autonomy_manager {
         AUTONOMY,
         UNKNOWN
     };
-    AutonomyType fromString(std::string &str) {
-        std::transform(str.begin(), str.end(), str.begin(),
-                       [](unsigned char c){ return std::tolower(c); });
-        if (str == "teleop") {
+
+    AutonomyType fromString(const std::string &str) {
+        std::string str_lower;
+        std::transform(str.begin(), str.end(), std::back_inserter(str_lower),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (str_lower == "teleop") {
             return AutonomyType::TELEOP;
-        } else if (str == "semi_autonomy") {
+        } else if (str_lower == "semi_autonomy") {
             return AutonomyType::SEMI_AUTONOMY;
-        } else if (str == "autonomy") {
+        } else if (str_lower == "autonomy") {
             return AutonomyType::AUTONOMY;
+        }else if (str_lower == "unknown") {
+            return AutonomyType::UNKNOWN;
         } else {
-            throw std::invalid_argument("Invalid autonomy type");
+            throw std::invalid_argument("Invalid autonomy type: " + str);
         }
     }
-    struct AutonomyTopicInfo{
+
+    std::string toString(AutonomyType autonomyType) {
+        switch (autonomyType) {
+            case AutonomyType::TELEOP:
+                return "teleop";
+            case AutonomyType::SEMI_AUTONOMY:
+                return "semi_autonomy";
+            case AutonomyType::AUTONOMY:
+                return "autonomy";
+            case AutonomyType::UNKNOWN:
+                return "unknown";
+        }
+        return "not_found";
+    }
+
+    struct AutonomyTopicInfo {
         std::map<std::string, AutonomyType> autonomyTypePerNode;
     };
 
@@ -39,29 +58,47 @@ namespace autonomy_manager {
     public:
         explicit AutonomyManager(const rclcpp::NodeOptions &options = rclcpp::NodeOptions()) : Node("autonomy_manager",
                                                                                                     options) {
-            declare_parameter<std::vector<std::string>>("twist_nodes",std::vector<std::string>{});
-            declare_parameter<std::vector<std::string>>("twist_autonomy_types",std::vector<std::string>{});
-            declare_parameter<std::string>("twist_topic","cmd_vel");
+            declare_parameter<std::vector<std::string>>("twist_nodes", std::vector<std::string>{});
+            declare_parameter<std::vector<std::string>>("twist_autonomy_types", std::vector<std::string>{});
+            declare_parameter<std::string>("twist_topic", "cmd_vel");
             std::vector<std::string> twist_nodes, twist_autonomy_types;
             std::string twist_topic;
             get_parameter("twist_nodes", twist_nodes);
             get_parameter("twist_autonomy_types", twist_autonomy_types);
             get_parameter("twist_topic", twist_topic);
 
+            // setup subscriptions and publisher
+            setupSubscriptions(twist_nodes, twist_autonomy_types, twist_topic);
+            setupAutonomyPublisher();
+
+        }
+
+        AutonomyManager(const std::vector<std::string> &twist_nodes,
+                        const std::vector<std::string> &twist_autonomy_types,
+                        const std::string &twist_topic, const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
+                : Node("autonomy_manager", options) {
+            // setup subscriptions and publisher
+            setupSubscriptions(twist_nodes, twist_autonomy_types, twist_topic);
+            setupAutonomyPublisher();
+        }
+
+        void setupSubscriptions(const std::vector<std::string> &twist_nodes,
+                                const std::vector<std::string> &twist_autonomy_types,
+                                const std::string &twist_topic) {
             for (int i = 0; i < twist_nodes.size(); i++) {
-                autonomyTopicInfo_[twist_topic].autonomyTypePerNode[twist_nodes[i]] = fromString(twist_autonomy_types[i]);
+                autonomyTopicInfo_[twist_topic].autonomyTypePerNode[twist_nodes[i]] = fromString(
+                        twist_autonomy_types[i]);
             }
             addSubscription<geometry_msgs::msg::Twist>(twist_topic);
-
             //TODO: add subscriptions for other topics (also adapt the config file) [e.g. topics for flexbe, etc.]
 
-            // Set up publisher for autonomy mode
+        }
+
+        void setupAutonomyPublisher() {
             autonomyPublisher_ = create_publisher<autonomy_manager_msgs::msg::AutonomyMode>("/autonomy_mode", 10);
             autonomy_manager_msgs::msg::AutonomyMode msg;
             msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
             autonomyPublisher_->publish(msg);
-
-            RCLCPP_INFO(get_logger(), "Started Subscriber");
         }
 
         /**
@@ -113,7 +150,7 @@ namespace autonomy_manager {
          * @param msg_info Information about the received message.
          * @return The name of the node that published the message.
          */
-        std::string getNodeName(const rclcpp::MessageInfo &msg_info, const std::string& topic) {
+        std::string getNodeName(const rclcpp::MessageInfo &msg_info, const std::string &topic) {
             auto gid = msg_info.get_rmw_message_info().publisher_gid;
             auto info = get_publishers_info_by_topic(topic);
             for (auto &info_per_publisher: info) {
@@ -124,13 +161,15 @@ namespace autonomy_manager {
             return "Unknown";
         }
 
-        void autonomyCallback(const std::string& topic, const std::string& node_name){
-            if(autonomyTopicInfo_.find(topic) == autonomyTopicInfo_.end()){
+        void autonomyCallback(const std::string &topic, const std::string &node_name) {
+            if (autonomyTopicInfo_.find(topic) == autonomyTopicInfo_.end()) {
                 RCLCPP_ERROR(get_logger(), "Received message on unknown topic %s", topic.c_str());
                 return;
             }
-            if(autonomyTopicInfo_[topic].autonomyTypePerNode.find(node_name) == autonomyTopicInfo_[topic].autonomyTypePerNode.end()){
-                RCLCPP_ERROR(get_logger(), "Received message from unknown node %s on topic %s", node_name.c_str(), topic.c_str());
+            if (autonomyTopicInfo_[topic].autonomyTypePerNode.find(node_name) ==
+                autonomyTopicInfo_[topic].autonomyTypePerNode.end()) {
+                RCLCPP_ERROR(get_logger(), "Received message from unknown node %s on topic %s", node_name.c_str(),
+                             topic.c_str());
                 //TODO: how to set the mode for unknown nodes ??
                 autonomy_manager_msgs::msg::AutonomyMode msg;
                 msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
@@ -139,10 +178,10 @@ namespace autonomy_manager {
             }
             // get the required autonomy type for the node
             AutonomyType requiredAutonomyType = autonomyTopicInfo_[topic].autonomyTypePerNode[node_name];
-            if(requiredAutonomyType != currentAutonomyType_){
+            if (requiredAutonomyType != currentAutonomyType_) {
                 // if the required autonomy type is different from the current autonomy type, publish the new autonomy type
                 autonomy_manager_msgs::msg::AutonomyMode msg;
-                switch(requiredAutonomyType){
+                switch (requiredAutonomyType) {
                     case AutonomyType::TELEOP:
                         msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED;
                         break;
