@@ -23,6 +23,8 @@ namespace autonomy_manager {
             autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS;
         } else if (str_lower == "unknown") {
             autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
+        } else if (str_lower == "inactive") {
+            autonomyMode.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::INACTIVE;
         } else {
             throw std::invalid_argument("Invalid autonomy type: " + str);
         }
@@ -39,6 +41,8 @@ namespace autonomy_manager {
                 return "autonomy";
             case autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN:
                 return "unknown";
+            case autonomy_manager_msgs::msg::AutonomyMode::INACTIVE:
+                return "inactive";
         }
         return "not_found";
     }
@@ -48,12 +52,13 @@ namespace autonomy_manager {
         std::map<std::string, autonomy_manager_msgs::msg::AutonomyMode> autonomyTypePerNode;
     };
 
-    struct ObservedTopicInfo{
+    struct ObservedTopicInfo {
         ObservedTopicInfo(const std::string &topicName, const std::vector<std::string> &nodeNames,
                           const std::vector<std::string> &autonomyModes, int timeout) : topicName(topicName),
                                                                                         nodeNames(nodeNames),
                                                                                         autonomyModes(autonomyModes),
                                                                                         timeout(timeout) {}
+
         std::string topicName;
         std::vector<std::string> nodeNames;
         std::vector<std::string> autonomyModes; // same order as nodeNames

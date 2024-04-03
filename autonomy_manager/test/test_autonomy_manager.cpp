@@ -22,6 +22,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
 };
 
+// a class that publishes on the arm_goal_pose topic
 class PosePublisher : public rclcpp::Node {
 public:
     explicit PosePublisher(const std::string &name) : Node(name + nameSpecifier) {
@@ -70,7 +71,11 @@ private:
     bool autonomy_mode_received_{false};
     rclcpp::Subscription<autonomy_manager_msgs::msg::AutonomyMode>::SharedPtr sub_;
 };
-
+/**
+ * Test class for the AutonomyManager
+ * It creates a node for each autonomy type and publishes on the cmd_vel topic and the arm_goal_pose topic.
+ * It also creates a subscriber for the autonomy_mode topic.
+ */
 class AutonomyManagerTest : public ::testing::Test {
 protected:
     std::map<std::string, std::shared_ptr<CmdVelPublisher>> nodesCmdVelPub_;
@@ -148,8 +153,8 @@ protected:
 };
 
 TEST_F(AutonomyManagerTest, TestStartUp) {
-    // without receiving a cmd_vel message, the autonomy mode should be "unknown"
-    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode, autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
+    // without receiving any message, the autonomy mode should be "inactive"
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode, autonomy_manager_msgs::msg::AutonomyMode::INACTIVE);
 }
 
 TEST_F(AutonomyManagerTest, TestDetectAutonomyNode) {
@@ -234,7 +239,7 @@ TEST_F(AutonomyManagerTest, TestTimeoutWithTimeoutSet){
     }
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
-              autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
+              autonomy_manager_msgs::msg::AutonomyMode::INACTIVE);
 }
 
 TEST_F(AutonomyManagerTest, ObservingSeveralTopicsTeleop_SA){
@@ -260,11 +265,11 @@ TEST_F(AutonomyManagerTest, ObservingSeveralTopicsTeleop_A){
 TEST_F(AutonomyManagerTest, ObservingSeveralTopicsTeleop_U){
     autonomy_subscriber_->reset();
     nodesPosePub_["teleop"]->publish();
-    nodesCmdVelPub_["unknown"]->publish(); // mode should remain teleop // TODO: really?
+    nodesCmdVelPub_["unknown"]->publish();
     waitFor(3);
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
-              autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED);
+              autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
 }
 
 
@@ -281,18 +286,51 @@ TEST_F(AutonomyManagerTest, ObservingSeveralTopicsSemiAutonomy_A){
 TEST_F(AutonomyManagerTest, ObservingSeveralTopicsSemiAutonomy_U){
     autonomy_subscriber_->reset();
     nodesPosePub_["semi_autonomy"]->publish();
-    nodesCmdVelPub_["unknown"]->publish(); // mode should remain teleop // TODO: really?
+    nodesCmdVelPub_["unknown"]->publish();
     waitFor(3);
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
-              autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+              autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
 }
 
 TEST_F(AutonomyManagerTest, ObservingSeveralTopicsAutonomy_U){
     autonomy_subscriber_->reset();
     nodesPosePub_["autonomy"]->publish();
-    nodesCmdVelPub_["unknown"]->publish(); // mode should remain teleop // TODO: really?
+    nodesCmdVelPub_["unknown"]->publish();
     waitFor(3);
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
+}
+
+TEST_F(AutonomyManagerTest, ObserversSeveralTopicsAutonomy_1Inactive){
+    // make sure that the mode is inactive
+    {
+        autonomy_subscriber_->reset();
+        nodesPosePub_["semi_autonomy"]->publish();
+        waitForAutonomyMsg();
+        EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+        EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+                  autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+        // wait for 10 seconds, msg should arrive after 3
+        autonomy_subscriber_->reset();
+        rclcpp::Rate rate(1);
+        for(int i = 0; i < 10; i++){
+            executor_->spin_some(std::chrono::seconds(1));
+            rate.sleep();
+            RCLCPP_INFO(autonomy_manager_->get_logger(), "Waiting for timeout: %d", i);
+            if(autonomy_subscriber_->receivedMsg()){
+                break;
+            }
+        }
+        EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+        EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+                  autonomy_manager_msgs::msg::AutonomyMode::INACTIVE);
+    }
+    // now test the actual test
+    autonomy_subscriber_->reset();
+    nodesCmdVelPub_["autonomy"]->publish();
+    waitForAutonomyMsg();
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
               autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS);

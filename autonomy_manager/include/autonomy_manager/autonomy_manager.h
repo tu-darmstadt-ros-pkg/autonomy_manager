@@ -2,8 +2,8 @@
 // Created by aljoscha on 20.02.24.
 //
 
-#ifndef HECTOR_ROBOT_BASE_NODE_AUTONOMYMANAGER_H
-#define HECTOR_ROBOT_BASE_NODE_AUTONOMYMANAGER_H
+#ifndef HECTOR_ROBOT_BASE_NODE_AUTONOMY_MANAGER_H
+#define HECTOR_ROBOT_BASE_NODE_AUTONOMY_MANAGER_H
 
 #include <rclcpp/rclcpp.hpp>
 #include <autonomy_manager/types.h>
@@ -24,6 +24,10 @@ namespace autonomy_manager {
             // first load observed topics
             declare_parameter("observed_topics", std::vector<std::string>{});
             get_parameter("observed_topics", observedTopics);
+            declare_parameter("stale_autonomy_mode", "inactive");
+            std::string staleAutonomyMode;
+            get_parameter("stale_autonomy_mode", staleAutonomyMode);
+            staleAutonomyMode_ = fromString(staleAutonomyMode);
             // for every observed topic load vector<string> <name>_nodes, vector<string> <name>_autonomy_types and int <name>_timeout
             std::vector<std::string> nodes, autonomy_types;
             int timeout;
@@ -34,7 +38,7 @@ namespace autonomy_manager {
                 get_parameter(topic + "_nodes", nodes);
                 get_parameter(topic + "_autonomy_types", autonomy_types);
                 get_parameter(topic + "_timeout", timeout);
-                observedTopicInfos.push_back({topic, nodes, autonomy_types, timeout});
+                observedTopicInfos.emplace_back(topic, nodes, autonomy_types, timeout);
             }
 
             // setup subscriptions and publisher
@@ -46,10 +50,11 @@ namespace autonomy_manager {
 
         }
 
-        AutonomyManager(const std::vector<ObservedTopicInfo> &observedTopicInfos,
-                        const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
+        explicit AutonomyManager(const std::vector<ObservedTopicInfo> &observedTopicInfos,
+                                 const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
                 : Node("autonomy_manager", options) {
             // setup subscriptions and publisher
+            staleAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::INACTIVE;
             for (const auto &observedTopicInfo: observedTopicInfos) {
                 setupSubscriptions(observedTopicInfo.nodeNames, observedTopicInfo.autonomyModes,
                                    observedTopicInfo.topicName, observedTopicInfo.timeout);
@@ -69,12 +74,12 @@ namespace autonomy_manager {
             // read topic type from topic info
             auto info = get_topic_names_and_types();
             auto topicTypes = info[topic];
-            for(const auto &topicType: topicTypes){
-                if(topicType == "geometry_msgs/msg/Twist"){
+            for (const auto &topicType: topicTypes) {
+                if (topicType == "geometry_msgs/msg/Twist") {
                     addSubscription<geometry_msgs::msg::Twist>(topic);
-                }else if(topicType == "geometry_msgs/msg/PoseStamped"){
+                } else if (topicType == "geometry_msgs/msg/PoseStamped") {
                     addSubscription<geometry_msgs::msg::PoseStamped>(topic);
-                }else{
+                } else {
                     RCLCPP_ERROR(get_logger(), "Unsupported topic type %s", topicType.c_str());
                 }
 
@@ -90,8 +95,6 @@ namespace autonomy_manager {
                                                           });
                 timerPerTopic_[topic]->cancel(); // cancel the timer initially
             }
-
-            //TODO: add subscriptions for other topics (also adapt the config file) [e.g. topics for flexbe, etc.]
 
         }
 
@@ -113,7 +116,7 @@ namespace autonomy_manager {
          */
         template<typename MessageType>
         void addSubscription(const std::string &topic) {
-            subscriptions_[topic] = create_subscription<MessageType>(topic, 5,
+            subscriptions_[topic] = create_subscription<MessageType>(topic, 10,
                                                                      [this, topic](
                                                                              const std::shared_ptr<MessageType> msg,
                                                                              const rclcpp::MessageInfo &msg_info) {
@@ -184,32 +187,43 @@ namespace autonomy_manager {
         }
 
         void updateAutonomyMode() {
-            // if one node is in teleop, the whole system is in teleop
+            // if one node is in unknown, the whole system is in unknown
+            // if one node is in teleop (and no topic in unknown), the whole system is in teleop
             // if no mode in teleop, but one in semi_autonomy, the whole system is in semi_autonomy
             // if no mode in teleop or semi_autonomy, the whole system is in autonomy
-            // TODO: how to deal with unknown mode?
             // iterate over all nodes and check if one is in teleop, semi_autonomy or unknown
-            bool teleop = false, semi_autonomy = false, autonomy = false, unknown = false;
+            bool teleop = false, semi_autonomy = false, autonomy = false, unknown = false, inactive = false;
             for (const auto &autonomyType: autonomyTypePerTopic_) {
-                if (autonomyType.second.autonomy_mode == autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED) {
-                    teleop = true;
-                } else if (autonomyType.second.autonomy_mode ==
-                           autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS) {
-                    semi_autonomy = true;
-                } else if (autonomyType.second.autonomy_mode == autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS) {
-                    autonomy = true;
-                } else if (autonomyType.second.autonomy_mode == autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN) {
-                    unknown = true;
+                switch (autonomyType.second.autonomy_mode) {
+                    case autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED:
+                        teleop = true;
+                        break;
+                    case autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS:
+                        semi_autonomy = true;
+                        break;
+                    case autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS:
+                        autonomy = true;
+                        break;
+                    case autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN:
+                        unknown = true;
+                        break;
+                    case autonomy_manager_msgs::msg::AutonomyMode::INACTIVE:
+                        inactive = true;
+                        break;
                 }
             }
-            if (teleop) {
+            if (unknown) {
+                currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
+            } else if (teleop) {
                 currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED;
             } else if (semi_autonomy) {
                 currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS;
             } else if (autonomy) {
                 currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS;
-            } else if (unknown) {
-                currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
+            } else if (inactive) {
+                currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::INACTIVE;
+            } else {
+                RCLCPP_ERROR(get_logger(), "No valid autonomy mode found");
             }
             autonomyPublisher_->publish(currentAutonomyMode_);
         }
@@ -234,4 +248,4 @@ namespace autonomy_manager {
 
 } // autonomy_manager
 
-#endif //HECTOR_ROBOT_BASE_NODE_AUTONOMYMANAGER_H
+#endif //HECTOR_ROBOT_BASE_NODE_AUTONOMY_MANAGER_H

@@ -1,11 +1,11 @@
 autonomy_manager:
   ros__parameters:
 
-    stale_mode: "UNKNOWN" # the mode that should be set if no new messages arrive (after timeout has passed)
+    stale_mode: "INACTIVE" # the mode that should be set if no new messages arrive (after the topic-specific timeout has passed)
 
-    observed_topics: ["cmd_vel"] # topics that autonomy manager should observe
+    observed_topics: [ "cmd_vel" ] # topics that autonomy manager should observe
 
     # per observed topic one configuration
-    cmd_vel_nodes: ["test_1", "test_2"] # nodes that publish to cmd_vel
-    cmd_vel_autonomy_types: ["TELEOP", "AUTONOMY"] # the autonomy types of the nodes that publish to cmd_vel
-    cmd_vel_timeout: 15.0 # timeout in seconds after which the autonomy manager should invalidate the mode if no new messsages arrive
+    cmd_vel_nodes: [ "test_1", "test_2" ] # nodes that publish to cmd_vel
+    cmd_vel_autonomy_types: [ "TELEOP", "AUTONOMY" ] # the autonomy types of the nodes that publish to cmd_vel
+    cmd_vel_timeout: 15.0 # timeout in seconds after which the autonomy manager should invalidate the mode if no new messages arrive

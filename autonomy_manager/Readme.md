@@ -2,15 +2,18 @@
 
 The Autonomy Manager ROS package is designed to facilitate access to the current autonomy mode of a robot. It achieves
 this by subscribing to specified topics and identifying the autonomy mode based on the nodes publishing to these topics.
+If it observes more than one topic, it will select the highest autonomy level among the observed topics. 
+(Autonomy levels are defined in the `autonomy_msgs` package.)
 
 ## Overview
 
 The Autonomy Manager package enables the classification of autonomy modes into one of the following categories:
 
+- Unknown
 - Teleoperated
 - Semi-autonomous
 - Autonomous
-- Unknown
+- Inactive
 
 It accomplishes this by monitoring designated topics and analyzing the messages sent by known nodes associated with
 different autonomy modes.
@@ -23,26 +26,30 @@ parameter server. Here is an example of the configuration:
 ```yaml
 autonomy_manager:
   ros__parameters:
-    twist_topic: "cmd_vel"
-    twist_nodes: [ "test_1", "test_2" ] # nodes that publish to twist_topic
-    twist_autonomy_types: [ "TELEOP", "AUTONOMY" ] # the autonomy types of the nodes that publish to twist_topic
+
+    stale_mode: "INACTIVE" # the mode that should be set if no new messages arrive (after the topic-specific timeout has passed)
+
+    observed_topics: [ "cmd_vel" ] # topics that autonomy manager should observe
+
+    # per observed topic one configuration
+    cmd_vel_nodes: [ "test_1", "test_2" ] # nodes that publish to cmd_vel
+    cmd_vel_autonomy_types: [ "TELEOP", "AUTONOMY" ] # the autonomy types of the nodes that publish to cmd_vel
+    cmd_vel_timeout: 15.0 # timeout in seconds after which the autonomy manager should invalidate the mode if no new messages arrive
 ```
-
-Explanation of the parameters:
-
-    twist_topic: Specifies the ROS topic to which messages related to motion commands are published.
-    twist_nodes: Lists the names of nodes that publish messages to the specified twist_topic.
-    twist_autonomy_types: Specifies the autonomy types associated with the nodes publishing to the twist_topic.
 
 # Autonomy Message
 
 The Autonomy Manager publishes an autonomy_mode message to indicate the current autonomy mode. The following constants
 are defined for different autonomy modes:
 
-    UNKNOWN: 0
-    TELEOPERATED: 1
-    AUTONOMOUS: 2
-    SEMI_AUTONOMOUS: 3
+    int8 autonomy_mode
+    # Constants (ordered by priority)
+    int8 UNKNOWN = 0
+    int8 TELEOPERATED = 1
+    int8 SEMI_AUTONOMOUS = 2
+    int8 AUTONOMOUS = 3
+    int8 INACTIVE = 4
+
 
 # Example / Test
 
