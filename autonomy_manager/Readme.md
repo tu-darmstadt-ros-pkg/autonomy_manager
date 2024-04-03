@@ -55,3 +55,12 @@ on the autonomy information provided by the sending nodes.
 Once the package is properly configured and launched, subscribers can listen to the autonomy_mode topic to access the
 current autonomy mode of the robot. This information can be utilized by other ROS nodes to adapt their behavior
 accordingly.
+
+# Limitations
+#### Predefined types
+Since the generic_subscriber does not seem to offer the possibility to get the corresponding msg info (which is required to infer the publisher id),
+the current implementation is limited to use a set of predefined types.
+
+#### Simultaneous publishers
+If Nodes with different autonomy types publish to the same topic at the same time, the Autonomy Manager will set the mode correctly. 
+Hence, the mode will change frequently, which might not be the desired behavior.

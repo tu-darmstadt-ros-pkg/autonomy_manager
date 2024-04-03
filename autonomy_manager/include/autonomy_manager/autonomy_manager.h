@@ -9,6 +9,7 @@
 #include <autonomy_manager/types.h>
 #include <autonomy_manager_msgs/msg/autonomy_mode.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 
 namespace autonomy_manager {
     using std::placeholders::_1;
@@ -64,7 +65,22 @@ namespace autonomy_manager {
                 autonomyTopicInfo_[topic].autonomyTypePerNode[nodes[i]] = fromString(
                         autonomy_types[i]);
             }
-            addSubscription<geometry_msgs::msg::Twist>(topic);
+
+            // read topic type from topic info
+            auto info = get_topic_names_and_types();
+            auto topicTypes = info[topic];
+            for(const auto &topicType: topicTypes){
+                if(topicType == "geometry_msgs/msg/Twist"){
+                    addSubscription<geometry_msgs::msg::Twist>(topic);
+                }else if(topicType == "geometry_msgs/msg/PoseStamped"){
+                    addSubscription<geometry_msgs::msg::PoseStamped>(topic);
+                }else{
+                    RCLCPP_ERROR(get_logger(), "Unsupported topic type %s", topicType.c_str());
+                }
+
+            }
+
+            //addSubscription<geometry_msgs::msg::Twist>(topic);
             timeoutPerTopic_[topic] = timeoutInSeconds;
             if (timeoutInSeconds > 0) {
                 // add timer that will invalidate the topic if no message is received for a certain time

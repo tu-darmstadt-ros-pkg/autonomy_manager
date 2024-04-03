@@ -1,13 +1,14 @@
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <autonomy_manager_msgs/msg/autonomy_mode.hpp>
 #include <autonomy_manager/autonomy_manager.h>
 
 // a class that publishes on the cmd_vel topic
 class CmdVelPublisher : public rclcpp::Node {
 public:
-    explicit CmdVelPublisher(const std::string &name) : Node(name) {
+    explicit CmdVelPublisher(const std::string &name) : Node(name + nameSpecifier) {
         pub_ = create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
     }
 
@@ -16,9 +17,30 @@ public:
         pub_->publish(msg);
     }
 
+    static const std::string nameSpecifier;
 private:
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
 };
+
+class PosePublisher : public rclcpp::Node {
+public:
+    explicit PosePublisher(const std::string &name) : Node(name + nameSpecifier) {
+        pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("arm_goal_pose", 10);
+    }
+
+    void publish() {
+        geometry_msgs::msg::PoseStamped msg;
+        pub_->publish(msg);
+    }
+
+    static const std::string nameSpecifier;
+private:
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_;
+};
+
+const std::string CmdVelPublisher::nameSpecifier = "_cmd_vel";
+const std::string PosePublisher::nameSpecifier = "_pose";
+
 
 // a class that subscribes to the autonomy_mode topic
 class AutonomySubscriber : public rclcpp::Node {
@@ -51,7 +73,8 @@ private:
 
 class AutonomyManagerTest : public ::testing::Test {
 protected:
-    std::map<std::string, std::shared_ptr<CmdVelPublisher>> nodes_;
+    std::map<std::string, std::shared_ptr<CmdVelPublisher>> nodesCmdVelPub_;
+    std::map<std::string, std::shared_ptr<PosePublisher>> nodesPosePub_;
     std::shared_ptr<AutonomySubscriber> autonomy_subscriber_;
     autonomy_manager::AutonomyManager::SharedPtr autonomy_manager_;
     rclcpp::executors::SingleThreadedExecutor::SharedPtr executor_;
@@ -68,27 +91,47 @@ protected:
             autonomyTypes.push_back(autonomy_manager::fromString(autonomyTypeName));
         }
         for (const auto &autonomyType: autonomyTypeNames) {
-            nodes_[autonomyType] = std::make_shared<CmdVelPublisher>(autonomyType);
+            nodesCmdVelPub_[autonomyType] = std::make_shared<CmdVelPublisher>(autonomyType);
+            nodesPosePub_[autonomyType] = std::make_shared<PosePublisher>(autonomyType);
         }
         // remove unknown type
         autonomyTypeNames.pop_back();
         autonomyTypes.pop_back();
 
         autonomy_subscriber_ = std::make_shared<AutonomySubscriber>("autonomy_subscriber");
-        autonomy_manager::ObservedTopicInfo observedTopicInfo("/cmd_vel", autonomyTypeNames, autonomyTypeNames, 0);
-        std::vector<autonomy_manager::ObservedTopicInfo> observedTopicInfos = {observedTopicInfo};
+        std::vector<std::string> nodesVelPubNames, nodesPosePubNames;
+        // iterate autonomyTypeNames and adapt PubNames by adding "_cmd_vel" and "_pose"
+        for (const auto &autonomyTypeName: autonomyTypeNames) {
+            nodesVelPubNames.push_back(autonomyTypeName + CmdVelPublisher::nameSpecifier);
+            nodesPosePubNames.push_back(autonomyTypeName + PosePublisher::nameSpecifier);
+        }
+        autonomy_manager::ObservedTopicInfo observedTopicInfoCmd("/cmd_vel", nodesVelPubNames, autonomyTypeNames, 0);
+        autonomy_manager::ObservedTopicInfo observedTopicInfoPose("/arm_goal_pose", nodesPosePubNames,
+                                                                  autonomyTypeNames, 3);
+        std::vector<autonomy_manager::ObservedTopicInfo> observedTopicInfos = {observedTopicInfoCmd,
+                                                                               observedTopicInfoPose};
         autonomy_manager_ = std::make_shared<autonomy_manager::AutonomyManager>(observedTopicInfos);
         // setup executor
         executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
         executor_->add_node(autonomy_manager_);
         executor_->add_node(autonomy_subscriber_);
-        for (const auto &node: nodes_) {
+        for (const auto &node: nodesCmdVelPub_) {
+            executor_->add_node(node.second);
+        }
+        for (const auto &node: nodesPosePub_) {
             executor_->add_node(node.second);
         }
 
         waitForAutonomyMsg();
         autonomy_subscriber_->reset();
+    }
 
+    void waitFor(int seconds){
+        rclcpp::Rate rate(1);
+        for(int i = 0; i < seconds; i++){
+            executor_->spin_some(std::chrono::seconds(1));
+            rate.sleep();
+        }
     }
 
     void TearDown() override {
@@ -111,7 +154,7 @@ TEST_F(AutonomyManagerTest, TestStartUp) {
 
 TEST_F(AutonomyManagerTest, TestDetectAutonomyNode) {
     autonomy_subscriber_->reset();
-    nodes_["autonomy"]->publish();
+    nodesCmdVelPub_["autonomy"]->publish();
     waitForAutonomyMsg();
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode, autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS);
@@ -119,7 +162,7 @@ TEST_F(AutonomyManagerTest, TestDetectAutonomyNode) {
 
 TEST_F(AutonomyManagerTest, TestDetectTeleopNode) {
     autonomy_subscriber_->reset();
-    nodes_["teleop"]->publish();
+    nodesCmdVelPub_["teleop"]->publish();
     waitForAutonomyMsg();
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
@@ -128,7 +171,7 @@ TEST_F(AutonomyManagerTest, TestDetectTeleopNode) {
 
 TEST_F(AutonomyManagerTest, TestDetectSemiAutonomyNode) {
     autonomy_subscriber_->reset();
-    nodes_["semi_autonomy"]->publish();
+    nodesCmdVelPub_["semi_autonomy"]->publish();
     waitForAutonomyMsg();
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
@@ -138,15 +181,119 @@ TEST_F(AutonomyManagerTest, TestDetectSemiAutonomyNode) {
 TEST_F(AutonomyManagerTest, TestDetectUnknownNode) {
     // since mode is already in unknown, we need to first publish a different mode
     autonomy_subscriber_->reset();
-    nodes_["semi_autonomy"]->publish();
+    nodesCmdVelPub_["semi_autonomy"]->publish();
     waitForAutonomyMsg();
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
               autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
 
     autonomy_subscriber_->reset();
-    nodes_["unknown"]->publish();
+    nodesCmdVelPub_["unknown"]->publish();
     waitForAutonomyMsg();
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode, autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
+}
+
+TEST_F(AutonomyManagerTest, TestTimeoutNoTimeoutSet){
+    autonomy_subscriber_->reset();
+    nodesCmdVelPub_["semi_autonomy"]->publish();
+    waitForAutonomyMsg();
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+    // wait for 10 seconds no msg should arrive
+    autonomy_subscriber_->reset();
+    rclcpp::Rate rate(1);
+    for(int i = 0; i < 10; i++){
+        executor_->spin_some(std::chrono::seconds(1));
+        rate.sleep();
+        RCLCPP_INFO(autonomy_manager_->get_logger(), "Waiting for timeout: %d", i);
+    }
+    EXPECT_FALSE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+}
+
+TEST_F(AutonomyManagerTest, TestTimeoutWithTimeoutSet){
+    autonomy_subscriber_->reset();
+    nodesPosePub_["semi_autonomy"]->publish();
+    waitForAutonomyMsg();
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+    // wait for 10 seconds, msg should arrive after 3
+    autonomy_subscriber_->reset();
+    rclcpp::Rate rate(1);
+    for(int i = 0; i < 10; i++){
+        executor_->spin_some(std::chrono::seconds(1));
+        rate.sleep();
+        RCLCPP_INFO(autonomy_manager_->get_logger(), "Waiting for timeout: %d", i);
+        if(autonomy_subscriber_->receivedMsg()){
+            break;
+        }
+    }
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
+}
+
+TEST_F(AutonomyManagerTest, ObservingSeveralTopicsTeleop_SA){
+    autonomy_subscriber_->reset();
+    nodesPosePub_["teleop"]->publish();
+    nodesCmdVelPub_["semi_autonomy"]->publish(); // mode should remain teleop
+    waitFor(3);
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED);
+}
+
+TEST_F(AutonomyManagerTest, ObservingSeveralTopicsTeleop_A){
+    autonomy_subscriber_->reset();
+    nodesPosePub_["teleop"]->publish();
+    nodesCmdVelPub_["autonomy"]->publish(); // mode should remain teleop
+    waitFor(3);
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED);
+}
+
+TEST_F(AutonomyManagerTest, ObservingSeveralTopicsTeleop_U){
+    autonomy_subscriber_->reset();
+    nodesPosePub_["teleop"]->publish();
+    nodesCmdVelPub_["unknown"]->publish(); // mode should remain teleop // TODO: really?
+    waitFor(3);
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED);
+}
+
+
+TEST_F(AutonomyManagerTest, ObservingSeveralTopicsSemiAutonomy_A){
+    autonomy_subscriber_->reset();
+    nodesPosePub_["semi_autonomy"]->publish();
+    nodesCmdVelPub_["autonomy"]->publish(); // mode should remain teleop
+    waitFor(3);
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+}
+
+TEST_F(AutonomyManagerTest, ObservingSeveralTopicsSemiAutonomy_U){
+    autonomy_subscriber_->reset();
+    nodesPosePub_["semi_autonomy"]->publish();
+    nodesCmdVelPub_["unknown"]->publish(); // mode should remain teleop // TODO: really?
+    waitFor(3);
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+}
+
+TEST_F(AutonomyManagerTest, ObservingSeveralTopicsAutonomy_U){
+    autonomy_subscriber_->reset();
+    nodesPosePub_["autonomy"]->publish();
+    nodesCmdVelPub_["unknown"]->publish(); // mode should remain teleop // TODO: really?
+    waitFor(3);
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS);
 }
