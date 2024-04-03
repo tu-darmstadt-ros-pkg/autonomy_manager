@@ -18,38 +18,62 @@ namespace autonomy_manager {
     public:
         explicit AutonomyManager(const rclcpp::NodeOptions &options = rclcpp::NodeOptions()) : Node("autonomy_manager",
                                                                                                     options) {
-            declare_parameter<std::vector<std::string>>("twist_nodes", std::vector<std::string>{});
-            declare_parameter<std::vector<std::string>>("twist_autonomy_types", std::vector<std::string>{});
-            declare_parameter<std::string>("twist_topic", "cmd_vel");
-            std::vector<std::string> twist_nodes, twist_autonomy_types;
-            std::string twist_topic;
-            get_parameter("twist_nodes", twist_nodes);
-            get_parameter("twist_autonomy_types", twist_autonomy_types);
-            get_parameter("twist_topic", twist_topic);
+            std::vector<ObservedTopicInfo> observedTopicInfos;
+            std::vector<std::string> observedTopics;
+            // first load observed topics
+            declare_parameter("observed_topics", std::vector<std::string>{});
+            get_parameter("observed_topics", observedTopics);
+            // for every observed topic load vector<string> <name>_nodes, vector<string> <name>_autonomy_types and int <name>_timeout
+            std::vector<std::string> nodes, autonomy_types;
+            int timeout;
+            for (const auto &topic: observedTopics) {
+                declare_parameter<std::vector<std::string>>(topic + "_nodes", std::vector<std::string>{});
+                declare_parameter<std::vector<std::string>>(topic + "_autonomy_types", std::vector<std::string>{});
+                declare_parameter<int>(topic + "_timeout", 0);
+                get_parameter(topic + "_nodes", nodes);
+                get_parameter(topic + "_autonomy_types", autonomy_types);
+                get_parameter(topic + "_timeout", timeout);
+                observedTopicInfos.push_back({topic, nodes, autonomy_types, timeout});
+            }
 
             // setup subscriptions and publisher
-            setupSubscriptions(twist_nodes, twist_autonomy_types, twist_topic);
+            for (const auto &observedTopicInfo: observedTopicInfos) {
+                setupSubscriptions(observedTopicInfo.nodeNames, observedTopicInfo.autonomyModes,
+                                   observedTopicInfo.topicName, observedTopicInfo.timeout);
+            }
             setupAutonomyPublisher();
 
         }
 
-        AutonomyManager(const std::vector<std::string> &twist_nodes,
-                        const std::vector<std::string> &twist_autonomy_types,
-                        const std::string &twist_topic, const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
+        AutonomyManager(const std::vector<ObservedTopicInfo> &observedTopicInfos,
+                        const rclcpp::NodeOptions &options = rclcpp::NodeOptions())
                 : Node("autonomy_manager", options) {
             // setup subscriptions and publisher
-            setupSubscriptions(twist_nodes, twist_autonomy_types, twist_topic);
+            for (const auto &observedTopicInfo: observedTopicInfos) {
+                setupSubscriptions(observedTopicInfo.nodeNames, observedTopicInfo.autonomyModes,
+                                   observedTopicInfo.topicName, observedTopicInfo.timeout);
+            }
             setupAutonomyPublisher();
         }
 
-        void setupSubscriptions(const std::vector<std::string> &twist_nodes,
-                                const std::vector<std::string> &twist_autonomy_types,
-                                const std::string &twist_topic) {
-            for (int i = 0; i < twist_nodes.size(); i++) {
-                autonomyTopicInfo_[twist_topic].autonomyTypePerNode[twist_nodes[i]] = fromString(
-                        twist_autonomy_types[i]);
+        void setupSubscriptions(const std::vector<std::string> &nodes,
+                                const std::vector<std::string> &autonomy_types,
+                                const std::string &topic,
+                                int timeoutInSeconds) {
+            for (int i = 0; i < nodes.size(); i++) {
+                autonomyTopicInfo_[topic].autonomyTypePerNode[nodes[i]] = fromString(
+                        autonomy_types[i]);
             }
-            addSubscription<geometry_msgs::msg::Twist>(twist_topic);
+            addSubscription<geometry_msgs::msg::Twist>(topic);
+            timeoutPerTopic_[topic] = timeoutInSeconds;
+            if (timeoutInSeconds > 0) {
+                // add timer that will invalidate the topic if no message is received for a certain time
+                timerPerTopic_[topic] = create_wall_timer(std::chrono::seconds(timeoutInSeconds),
+                                                          [this, topic]() {
+                                                              invalidateStaleTopics(topic);
+                                                          });
+                timerPerTopic_[topic]->cancel(); // cancel the timer initially
+            }
 
             //TODO: add subscriptions for other topics (also adapt the config file) [e.g. topics for flexbe, etc.]
 
@@ -58,8 +82,7 @@ namespace autonomy_manager {
         void setupAutonomyPublisher() {
             autonomyPublisher_ = create_publisher<autonomy_manager_msgs::msg::AutonomyMode>("/autonomy_mode", 10);
             autonomy_manager_msgs::msg::AutonomyMode msg;
-            msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
-            autonomyPublisher_->publish(msg);
+            autonomyPublisher_->publish(staleAutonomyMode_);
         }
 
         /**
@@ -69,16 +92,17 @@ namespace autonomy_manager {
          * The callback for the subscription is a lambda function that calls the subscriptionCallback function,
          * passing the received message, message info, and the topic name.
          *
-         * @tparam T The message type of the topic.
+         * @tparam MessageType The message type of the topic.
          * @param topic The name of the topic to subscribe to.
          */
-        template<typename T>
+        template<typename MessageType>
         void addSubscription(const std::string &topic) {
-            subscriptions_[topic] = create_subscription<T>(topic, 5,
-                                                           [this, topic](const std::shared_ptr<T> msg,
-                                                                         const rclcpp::MessageInfo &msg_info) {
-                                                               subscriptionCallback(msg, msg_info, topic);
-                                                           }
+            subscriptions_[topic] = create_subscription<MessageType>(topic, 5,
+                                                                     [this, topic](
+                                                                             const std::shared_ptr<MessageType> msg,
+                                                                             const rclcpp::MessageInfo &msg_info) {
+                                                                         subscriptionCallback(msg, msg_info, topic);
+                                                                     }
             );
         }
 
@@ -88,18 +112,19 @@ namespace autonomy_manager {
          * This function is called whenever a message is received on a subscribed topic.
          * It logs the topic name and the node name of the publisher.
          *
-         * @tparam T The message type of the topic.
+         * @tparam MessageType The message type of the topic.
          * @param msg The received message.
          * @param msg_info Information about the received message.
          * @param topic The name of the topic the message was received on.
          */
-        template<typename T>
-        void subscriptionCallback(const std::shared_ptr<T> msg, const rclcpp::MessageInfo &msg_info,
+        template<typename MessageType>
+        void subscriptionCallback(const std::shared_ptr<MessageType> msg, const rclcpp::MessageInfo &msg_info,
                                   const std::string &topic) {
             (void) msg; // suppress unused parameter warning
             RCLCPP_INFO(get_logger(), "Received message on topic %s", topic.c_str());
             auto node_name = getNodeName(msg_info, topic);
             RCLCPP_INFO(get_logger(), "Heartbeat from %s", node_name.c_str());
+            if (timeoutPerTopic_[topic] > 0) timerPerTopic_[topic]->reset(); // cancel and restart the timer
             autonomyCallback(topic, node_name);
         }
 
@@ -127,31 +152,68 @@ namespace autonomy_manager {
                 RCLCPP_ERROR(get_logger(), "Received message on unknown topic %s", topic.c_str());
                 return;
             }
+            auto cacheOldAutonomyType = autonomyTypePerTopic_[topic];
             if (autonomyTopicInfo_[topic].autonomyTypePerNode.find(node_name) ==
                 autonomyTopicInfo_[topic].autonomyTypePerNode.end()) {
                 RCLCPP_ERROR(get_logger(), "Received message from unknown node %s on topic %s", node_name.c_str(),
                              topic.c_str());
-                //TODO: how to set the mode for unknown nodes ??
-                autonomy_manager_msgs::msg::AutonomyMode msg;
-                msg.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
-                autonomyPublisher_->publish(msg);
-                return;
+                autonomyTypePerTopic_[topic].autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
+            } else {
+                // get the required autonomy type for the node
+                autonomy_manager_msgs::msg::AutonomyMode requiredAutonomyType = autonomyTopicInfo_[topic].autonomyTypePerNode[node_name];
+                autonomyTypePerTopic_[topic] = requiredAutonomyType;
             }
-            // get the required autonomy type for the node
-            autonomy_manager_msgs::msg::AutonomyMode requiredAutonomyType = autonomyTopicInfo_[topic].autonomyTypePerNode[node_name];
-            if (requiredAutonomyType.autonomy_mode != currentAutonomyMode.autonomy_mode) {
-                // if the required autonomy type is different from the current autonomy type, publish the new autonomy type
-                autonomyPublisher_->publish(requiredAutonomyType);
-                currentAutonomyMode = requiredAutonomyType;
+            if (cacheOldAutonomyType.autonomy_mode != autonomyTypePerTopic_[topic].autonomy_mode)
+                updateAutonomyMode();
+        }
+
+        void updateAutonomyMode() {
+            // if one node is in teleop, the whole system is in teleop
+            // if no mode in teleop, but one in semi_autonomy, the whole system is in semi_autonomy
+            // if no mode in teleop or semi_autonomy, the whole system is in autonomy
+            // TODO: how to deal with unknown mode?
+            // iterate over all nodes and check if one is in teleop, semi_autonomy or unknown
+            bool teleop = false, semi_autonomy = false, autonomy = false, unknown = false;
+            for (const auto &autonomyType: autonomyTypePerTopic_) {
+                if (autonomyType.second.autonomy_mode == autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED) {
+                    teleop = true;
+                } else if (autonomyType.second.autonomy_mode ==
+                           autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS) {
+                    semi_autonomy = true;
+                } else if (autonomyType.second.autonomy_mode == autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS) {
+                    autonomy = true;
+                } else if (autonomyType.second.autonomy_mode == autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN) {
+                    unknown = true;
+                }
             }
+            if (teleop) {
+                currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED;
+            } else if (semi_autonomy) {
+                currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS;
+            } else if (autonomy) {
+                currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS;
+            } else if (unknown) {
+                currentAutonomyMode_.autonomy_mode = autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN;
+            }
+            autonomyPublisher_->publish(currentAutonomyMode_);
+        }
+
+        void invalidateStaleTopics(const std::string &topic) {
+            RCLCPP_INFO(get_logger(), "Topic %s timed out", topic.c_str());
+            autonomyTypePerTopic_[topic] = staleAutonomyMode_;
+            updateAutonomyMode();
         }
 
 
     private:
-        std::map<std::string, rclcpp::SubscriptionBase::SharedPtr> subscriptions_; // map of subscriptions per topic name
-        std::map<std::string, AutonomyTopicInfo> autonomyTopicInfo_; // map of autonomy types per NodeName per topic
+        std::map<std::string, rclcpp::SubscriptionBase::SharedPtr> subscriptions_;              // map of subscriptions per topic name
+        std::map<std::string, autonomy_manager_msgs::msg::AutonomyMode> autonomyTypePerTopic_;  // map of autonomy mode per subscribed topic
+        std::map<std::string, rclcpp::TimerBase::SharedPtr> timerPerTopic_;                     // map of timers per topic
+        std::map<std::string, int> timeoutPerTopic_;                                            // map of timeouts per topic
+        std::map<std::string, AutonomyTopicInfo> autonomyTopicInfo_;                            // map of autonomy types per NodeName per topic
+        autonomy_manager_msgs::msg::AutonomyMode currentAutonomyMode_;                          // current autonomy mode
+        autonomy_manager_msgs::msg::AutonomyMode staleAutonomyMode_;                            // autonomy mode to be published if no message is received
         rclcpp::Publisher<autonomy_manager_msgs::msg::AutonomyMode>::SharedPtr autonomyPublisher_;
-        autonomy_manager_msgs::msg::AutonomyMode currentAutonomyMode;
     };
 
 } // autonomy_manager

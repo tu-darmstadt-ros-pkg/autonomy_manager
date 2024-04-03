@@ -75,8 +75,9 @@ protected:
         autonomyTypes.pop_back();
 
         autonomy_subscriber_ = std::make_shared<AutonomySubscriber>("autonomy_subscriber");
-        autonomy_manager_ = std::make_shared<autonomy_manager::AutonomyManager>(autonomyTypeNames, autonomyTypeNames,
-                                                                                "cmd_vel");
+        autonomy_manager::ObservedTopicInfo observedTopicInfo("/cmd_vel", autonomyTypeNames, autonomyTypeNames, 0);
+        std::vector<autonomy_manager::ObservedTopicInfo> observedTopicInfos = {observedTopicInfo};
+        autonomy_manager_ = std::make_shared<autonomy_manager::AutonomyManager>(observedTopicInfos);
         // setup executor
         executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
         executor_->add_node(autonomy_manager_);
@@ -95,8 +96,10 @@ protected:
     }
 
     void waitForAutonomyMsg() {
-        while (!autonomy_subscriber_->receivedMsg()) {
+        int counter = 0;
+        while (!autonomy_subscriber_->receivedMsg() && counter < 30) {
             executor_->spin_some(std::chrono::milliseconds(100));
+            counter++;
         }
     }
 };
@@ -110,6 +113,7 @@ TEST_F(AutonomyManagerTest, TestDetectAutonomyNode) {
     autonomy_subscriber_->reset();
     nodes_["autonomy"]->publish();
     waitForAutonomyMsg();
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode, autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS);
 }
 
@@ -117,6 +121,7 @@ TEST_F(AutonomyManagerTest, TestDetectTeleopNode) {
     autonomy_subscriber_->reset();
     nodes_["teleop"]->publish();
     waitForAutonomyMsg();
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
               autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED);
 }
@@ -125,13 +130,23 @@ TEST_F(AutonomyManagerTest, TestDetectSemiAutonomyNode) {
     autonomy_subscriber_->reset();
     nodes_["semi_autonomy"]->publish();
     waitForAutonomyMsg();
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
               autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
 }
 
 TEST_F(AutonomyManagerTest, TestDetectUnknownNode) {
+    // since mode is already in unknown, we need to first publish a different mode
+    autonomy_subscriber_->reset();
+    nodes_["semi_autonomy"]->publish();
+    waitForAutonomyMsg();
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
+    EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
+              autonomy_manager_msgs::msg::AutonomyMode::SEMI_AUTONOMOUS);
+
     autonomy_subscriber_->reset();
     nodes_["unknown"]->publish();
     waitForAutonomyMsg();
+    EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode, autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN);
 }

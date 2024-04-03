@@ -48,5 +48,17 @@ namespace autonomy_manager {
         std::map<std::string, autonomy_manager_msgs::msg::AutonomyMode> autonomyTypePerNode;
     };
 
+    struct ObservedTopicInfo{
+        ObservedTopicInfo(const std::string &topicName, const std::vector<std::string> &nodeNames,
+                          const std::vector<std::string> &autonomyModes, int timeout) : topicName(topicName),
+                                                                                        nodeNames(nodeNames),
+                                                                                        autonomyModes(autonomyModes),
+                                                                                        timeout(timeout) {}
+        std::string topicName;
+        std::vector<std::string> nodeNames;
+        std::vector<std::string> autonomyModes; // same order as nodeNames
+        int timeout; // if <= 0, no timeout
+    };
+
 }
 #endif //AUTONOMY_MANAGER_TYPES_H
