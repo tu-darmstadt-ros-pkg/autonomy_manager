@@ -15,7 +15,7 @@ namespace autonomy_manager {
     using std::placeholders::_1;
     using std::placeholders::_2;
 
-    class AutonomyManager : public rclcpp::Node {
+    class AutonomyManager final : public rclcpp::Node {
     public:
         explicit AutonomyManager(const rclcpp::NodeOptions &options = rclcpp::NodeOptions()) : Node("autonomy_manager",
                                                                                                     options) {
@@ -65,7 +65,7 @@ namespace autonomy_manager {
         void setupSubscriptions(const std::vector<std::string> &nodes,
                                 const std::vector<std::string> &autonomy_types,
                                 const std::string &topic,
-                                int timeoutInSeconds) {
+                                const int timeoutInSeconds) {
             for (int i = 0; i < nodes.size(); i++) {
                 autonomyTopicInfo_[topic].autonomyTypePerNode[nodes[i]] = fromString(
                         autonomy_types[i]);
@@ -95,6 +95,7 @@ namespace autonomy_manager {
                                                           });
                 timerPerTopic_[topic]->cancel(); // cancel the timer initially
             }
+            autonomyTypePerTopic_[topic] = staleAutonomyMode_; // set initial autonomy mode
 
         }
 
@@ -153,9 +154,11 @@ namespace autonomy_manager {
          * This function uses the publisher_gid from the message info to find the node name of the publisher.
          *
          * @param msg_info Information about the received message.
+         * @param topic The name of the topic the message was received on.
          * @return The name of the node that published the message.
          */
-        std::string getNodeName(const rclcpp::MessageInfo &msg_info, const std::string &topic) {
+        std::string getNodeName(const rclcpp::MessageInfo &msg_info, const std::string &topic) const
+        {
             auto gid = msg_info.get_rmw_message_info().publisher_gid;
             auto info = get_publishers_info_by_topic(topic);
             for (auto &info_per_publisher: info) {
@@ -171,7 +174,7 @@ namespace autonomy_manager {
                 RCLCPP_ERROR(get_logger(), "Received message on unknown topic %s", topic.c_str());
                 return;
             }
-            auto cacheOldAutonomyType = autonomyTypePerTopic_[topic];
+            const auto cacheOldAutonomyType = autonomyTypePerTopic_[topic];
             if (autonomyTopicInfo_[topic].autonomyTypePerNode.find(node_name) ==
                 autonomyTopicInfo_[topic].autonomyTypePerNode.end()) {
                 RCLCPP_ERROR(get_logger(), "Received message from unknown node %s on topic %s", node_name.c_str(),
@@ -193,8 +196,8 @@ namespace autonomy_manager {
             // if no mode in teleop or semi_autonomy, the whole system is in autonomy
             // iterate over all nodes and check if one is in teleop, semi_autonomy or unknown
             bool teleop = false, semi_autonomy = false, autonomy = false, unknown = false, inactive = false;
-            for (const auto &autonomyType: autonomyTypePerTopic_) {
-                switch (autonomyType.second.autonomy_mode) {
+            for (const auto & [fst, snd]: autonomyTypePerTopic_) {
+                switch (snd.autonomy_mode) {
                     case autonomy_manager_msgs::msg::AutonomyMode::TELEOPERATED:
                         teleop = true;
                         break;
@@ -209,6 +212,10 @@ namespace autonomy_manager {
                         break;
                     case autonomy_manager_msgs::msg::AutonomyMode::INACTIVE:
                         inactive = true;
+                        break;
+                    default:
+                        unknown = true;
+                        RCLCPP_ERROR(get_logger(), "Unknown autonomy mode");
                         break;
                 }
             }
@@ -226,6 +233,7 @@ namespace autonomy_manager {
                 RCLCPP_ERROR(get_logger(), "No valid autonomy mode found");
             }
             autonomyPublisher_->publish(currentAutonomyMode_);
+            RCLCPP_INFO_STREAM(get_logger(), "Set autonomy mode to " << toString(currentAutonomyMode_));
         }
 
         void invalidateStaleTopics(const std::string &topic) {

@@ -131,7 +131,7 @@ protected:
         autonomy_subscriber_->reset();
     }
 
-    void waitFor(int seconds){
+    void waitFor( const int seconds){
         rclcpp::Rate rate(1);
         for(int i = 0; i < seconds; i++){
             executor_->spin_some(std::chrono::seconds(1));
@@ -334,4 +334,10 @@ TEST_F(AutonomyManagerTest, ObserversSeveralTopicsAutonomy_1Inactive){
     EXPECT_TRUE(autonomy_subscriber_->receivedMsg());
     EXPECT_EQ(autonomy_subscriber_->autonomy_mode_.autonomy_mode,
               autonomy_manager_msgs::msg::AutonomyMode::AUTONOMOUS);
+}
+
+// sTART THE TESTS
+int main(int argc, char **argv) {
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
