@@ -1,9 +1,9 @@
+#include <autonomy_manager/autonomy_manager.h>
+#include <autonomy_manager_msgs/msg/autonomy_mode.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/twist.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <autonomy_manager_msgs/msg/autonomy_mode.hpp>
-#include <autonomy_manager/autonomy_manager.h>
 
 // a class that publishes on the cmd_vel topic
 class CmdVelPublisher : public rclcpp::Node
@@ -50,16 +50,15 @@ private:
 const std::string CmdVelPublisher::nameSpecifier = "_cmd_vel";
 const std::string PosePublisher::nameSpecifier = "_pose";
 
-
 // a class that subscribes to the autonomy_mode topic
 class AutonomySubscriber : public rclcpp::Node
 {
 public:
   explicit AutonomySubscriber( const std::string &name ) : Node( name )
   {
-    sub_ = create_subscription<autonomy_manager_msgs::msg::AutonomyMode>( "/autonomy_mode", 10,
-      std::bind( &AutonomySubscriber::callback,
-                 this, std::placeholders::_1 ) );
+    sub_ = create_subscription<autonomy_manager_msgs::msg::AutonomyMode>(
+        "/autonomy_mode", 10,
+        std::bind( &AutonomySubscriber::callback, this, std::placeholders::_1 ) );
   }
 
   void callback( const autonomy_manager_msgs::msg::AutonomyMode::SharedPtr msg )
@@ -72,18 +71,17 @@ public:
 
   bool receivedMsg() const { return autonomy_mode_received_; }
 
-
   autonomy_manager_msgs::msg::AutonomyMode autonomy_mode_;
 
 private:
-  bool autonomy_mode_received_{false};
+  bool autonomy_mode_received_{ false };
   rclcpp::Subscription<autonomy_manager_msgs::msg::AutonomyMode>::SharedPtr sub_;
 };
 
 /**
  * Test class for the AutonomyManager
- * It creates a node for each autonomy type and publishes on the cmd_vel topic and the arm_goal_pose topic.
- * It also creates a subscriber for the autonomy_mode topic.
+ * It creates a node for each autonomy type and publishes on the cmd_vel topic and the arm_goal_pose
+ * topic. It also creates a subscriber for the autonomy_mode topic.
  */
 class AutonomyManagerTest : public ::testing::Test
 {
@@ -95,12 +93,11 @@ protected:
   rclcpp::executors::SingleThreadedExecutor::SharedPtr executor_;
   // autonomy Topic subscriber
 
-
   void SetUp() override
   {
     rclcpp::init( 0, nullptr );
     // get all autonomyTypes as string
-    std::vector<std::string> autonomyTypeNames = {"autonomy", "teleop", "semi_autonomy", "unknown"};
+    std::vector<std::string> autonomyTypeNames = { "autonomy", "teleop", "semi_autonomy", "unknown" };
     std::vector<autonomy_manager_msgs::msg::AutonomyMode> autonomyTypes;
     autonomyTypes.reserve( autonomyTypeNames.size() );
     for ( const auto &autonomyTypeName : autonomyTypeNames ) {
@@ -121,12 +118,12 @@ protected:
       nodesVelPubNames.push_back( autonomyTypeName + CmdVelPublisher::nameSpecifier );
       nodesPosePubNames.push_back( autonomyTypeName + PosePublisher::nameSpecifier );
     }
-    autonomy_manager::ObservedTopicInfo observedTopicInfoCmd(
-        "/cmd_vel", nodesVelPubNames, autonomyTypeNames, 0 );
+    autonomy_manager::ObservedTopicInfo observedTopicInfoCmd( "/cmd_vel", nodesVelPubNames,
+                                                              autonomyTypeNames, 0 );
     autonomy_manager::ObservedTopicInfo observedTopicInfoPose( "/arm_goal_pose", nodesPosePubNames,
                                                                autonomyTypeNames, 3 );
-    std::vector<autonomy_manager::ObservedTopicInfo> observedTopicInfos = {observedTopicInfoCmd,
-      observedTopicInfoPose};
+    std::vector<autonomy_manager::ObservedTopicInfo> observedTopicInfos = { observedTopicInfoCmd,
+                                                                            observedTopicInfoPose };
     autonomy_manager_ = std::make_shared<autonomy_manager::AutonomyManager>( observedTopicInfos );
     // setup executor
     executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
@@ -251,7 +248,9 @@ TEST_F( AutonomyManagerTest, TestTimeoutWithTimeoutSet )
     executor_->spin_some( std::chrono::seconds( 1 ) );
     rate.sleep();
     RCLCPP_INFO( autonomy_manager_->get_logger(), "Waiting for timeout: %d", i );
-    if ( autonomy_subscriber_->receivedMsg() ) { break; }
+    if ( autonomy_subscriber_->receivedMsg() ) {
+      break;
+    }
   }
   EXPECT_TRUE( autonomy_subscriber_->receivedMsg() );
   EXPECT_EQ( autonomy_subscriber_->autonomy_mode_.autonomy_mode,
@@ -290,7 +289,6 @@ TEST_F( AutonomyManagerTest, ObservingSeveralTopicsTeleop_U )
   EXPECT_EQ( autonomy_subscriber_->autonomy_mode_.autonomy_mode,
              autonomy_manager_msgs::msg::AutonomyMode::UNKNOWN );
 }
-
 
 TEST_F( AutonomyManagerTest, ObservingSeveralTopicsSemiAutonomy_A )
 {
@@ -342,7 +340,9 @@ TEST_F( AutonomyManagerTest, ObserversSeveralTopicsAutonomy_1Inactive )
       executor_->spin_some( std::chrono::seconds( 1 ) );
       rate.sleep();
       RCLCPP_INFO( autonomy_manager_->get_logger(), "Waiting for timeout: %d", i );
-      if ( autonomy_subscriber_->receivedMsg() ) { break; }
+      if ( autonomy_subscriber_->receivedMsg() ) {
+        break;
+      }
     }
     EXPECT_TRUE( autonomy_subscriber_->receivedMsg() );
     EXPECT_EQ( autonomy_subscriber_->autonomy_mode_.autonomy_mode,
