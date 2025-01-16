@@ -4,7 +4,9 @@
 
 #include "../include/autonomy_manager/autonomy_manager.h"
 
-namespace autonomy_manager {} // autonomy_manager
+namespace autonomy_manager
+{
+} // namespace autonomy_manager
 
 #include "rclcpp_components/register_node_macro.hpp"
 
