@@ -66,6 +66,14 @@ public:
     setupAutonomyPublisher();
   }
 
+  ~AutonomyManager() override
+  {
+    // cancel all timers
+    for ( auto &[topic, timer] : timerPerTopic_ ) { timer->cancel(); }
+    // reset all subscriptions
+    for ( auto &[topic, subscription] : subscriptions_ ) { subscription.reset(); }
+  }
+
   void setupSubscriptions( const std::vector<std::string> &nodes,
                            const std::vector<std::string> &autonomy_types, const std::string &topic,
                            const int timeoutInSeconds )
