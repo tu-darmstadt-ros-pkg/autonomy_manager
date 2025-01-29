@@ -42,11 +42,7 @@ ament_target_dependencies(${PROJECT_NAME}_node
         "autonomy_manager_msgs"
         "geometry_msgs"
         )
-#target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
 
-# Add the test executable
-#add_executable(${PROJECT_NAME}_gtest test/test_autonomy_manager.cpp)
-# Link the test executable to the library
 
 # Add the test
 ament_add_gtest(${PROJECT_NAME}_gtest test/test_autonomy_manager.cpp)
@@ -77,11 +73,6 @@ install(TARGETS ${PROJECT_NAME}_node
         DESTINATION lib/${PROJECT_NAME}
         )
 
-install(
-        DIRECTORY include
-        DESTINATION include
-)
-        
 
 
 ament_package()
