@@ -101,8 +101,8 @@ public:
 
   void setupAutonomyPublisher()
   {
-    autonomyPublisher_ =
-        create_publisher<autonomy_manager_msgs::msg::AutonomyMode>( "/autonomy_mode", 10 );
+    autonomyPublisher_ = create_publisher<autonomy_manager_msgs::msg::AutonomyMode>(
+        "autonomy_mode", 10 ); // if launched in robot namespace, this will be /<robot>/autonomy_mode
     autonomy_manager_msgs::msg::AutonomyMode msg;
     autonomyPublisher_->publish( staleAutonomyMode_ );
   }
