@@ -2,7 +2,7 @@
 
 The Autonomy Manager ROS package is designed to facilitate access to the current autonomy mode of a robot. It achieves
 this by subscribing to specified topics and identifying the autonomy mode based on the nodes publishing to these topics.
-If it observes more than one topic, it will select the highest autonomy level among the observed topics. 
+If it observes more than one topic, it will select the highest autonomy level among the observed topics.
 (Autonomy levels are defined in the `autonomy_msgs` package.)
 
 ## Overview
@@ -69,5 +69,5 @@ Since the generic_subscriber does not seem to offer the possibility to get the c
 the current implementation is limited to use a set of predefined types.
 
 #### Simultaneous publishers
-If Nodes with different autonomy types publish to the same topic at the same time, the Autonomy Manager will set the mode correctly. 
+If Nodes with different autonomy types publish to the same topic at the same time, the Autonomy Manager will set the mode correctly.
 Hence, the mode will change frequently, which might not be the desired behavior.
