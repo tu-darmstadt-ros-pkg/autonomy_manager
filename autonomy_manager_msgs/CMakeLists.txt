@@ -4,21 +4,18 @@ project(autonomy_manager_msgs)
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
-###########
-## Build ##
-###########
+# ##############################################################################
+# Build ##
+# ##############################################################################
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-        "msg/AutonomyMode.msg"
-        #"srv/SetEStop.srv"
-        )
+rosidl_generate_interfaces(
+  ${PROJECT_NAME} "msg/AutonomyMode.msg" # "srv/SetEStop.srv"
+)
 
-#############
-## Install ##
-#############
+# ##############################################################################
+# Install ##
+# ##############################################################################
 
-install(DIRECTORY "msg"
-        DESTINATION "share/${PROJECT_NAME}"
-        )
+install(DIRECTORY "msg" DESTINATION "share/${PROJECT_NAME}")
 
 ament_package()
