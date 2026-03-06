@@ -1,5 +1,0 @@
-<launch>
-    <node name="autonomy_manager" pkg="autonomy_manager" exec="autonomy_manager_node">
-        <param from="$(find-pkg-share autonomy_manager)/config/autonomy_manager.yaml" />
-    </node>
-</launch>

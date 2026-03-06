@@ -1,0 +1,9 @@
+launch:
+  - node:
+      pkg: autonomy_manager
+      exec: autonomy_manager_node
+      name: autonomy_manager
+      output: screen
+      param:
+        - from: $(find-pkg-share autonomy_manager)/config/autonomy_manager.yaml
+          allow_substs: true
