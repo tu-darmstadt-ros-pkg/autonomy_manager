@@ -1,11 +1,67 @@
-autonomy_manager:
+/**:
   ros__parameters:
 
-    stale_mode: "INACTIVE" # the mode that should be set if no new messages arrive (after the topic-specific timeout has passed)
+    stale_mode: "inactive" # mode when no messages arrive (after timeout)
 
-    observed_topics: [ "cmd_vel" ] # topics that autonomy manager should observe
+    # --- E-Stop monitoring ---
+    hard_e_stop_topic: "estop_board/hard_estop"
+    soft_e_stop_topic: "e_stop_manager/aggregated_state/emergency_stop_software"
 
-    # per observed topic one configuration
-    cmd_vel_nodes: [ "test_1", "test_2" ] # nodes that publish to cmd_vel
-    cmd_vel_autonomy_types: [ "TELEOP", "AUTONOMY" ] # the autonomy types of the nodes that publish to cmd_vel
-    cmd_vel_timeout: 15.0 # timeout in seconds after which the autonomy manager should invalidate the mode if no new messages arrive
+    # --- Topic-based monitoring (generic subscription) ---
+    observed_topics: ["cmd_vel"]
+
+    cmd_vel:
+      nodes: ["*nav2*"]                   # supports glob wildcards (*, ?, [...])
+      autonomy_types: ["autonomy"]        # same order as nodes
+      default_autonomy_type: "teleop"     # fallback for unmatched nodes (optional)
+      timeout: 0.5                       # reconfigurable (0 = no timeout)
+      operating_mode: "driving"
+
+    # --- Action server monitoring ---
+    observed_actions: ["move_action", "fold_manager_action"]
+
+    move_action:
+      autonomy_type: "autonomy"
+      timeout: 300.0 # in case action server becomes unresponsive
+      operating_mode: "autonomous"
+    fold_manager_action:
+      autonomy_type: "autonomy"
+      timeout: 300.0 # in case action server becomes unresponsive
+      operating_mode: "autonomous"
+
+    # --- Controller monitoring ---
+    controller_manager_activity_topic: "controller_manager/activity"
+    joint_states_topic: "joint_states"
+    joint_velocity_threshold: 0.01 # reconfigurable (rad/s)
+
+    list_controllers_service: "controller_manager/list_controllers"
+
+    observed_controllers: ["moveit_twist_controller", "flipper_velocity_controller"]
+
+    moveit_twist_controller:
+      autonomy_type: "teleop"
+      require_motion: true # reconfigurable; false: active state is enough
+      operating_mode: "manipulation"
+    flipper_velocity_controller:
+      autonomy_type: "teleop"
+      require_motion: true
+      operating_mode: "driving"
+
+    # --- Operating mode rule table (first match wins, "*" = wildcard) ---
+    operating_mode_rules:
+      rule_0:
+        autonomy: "emergency_stop_hard"
+        mode: "*"
+        output: "safe"
+      rule_1:
+        autonomy: "teleop"
+        mode: "driving"
+        output: "driving"
+      rule_2:
+        autonomy: "teleop"
+        mode: "manipulation"
+        output: "manipulation"
+      rule_3:
+        autonomy: "autonomy"
+        mode: "*"
+        output: "autonomous"
