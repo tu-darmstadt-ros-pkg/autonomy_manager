@@ -8,9 +8,10 @@
 
   <license>TODO</license>
 
-  <!-- Add any relevant URLs if needed -->
-
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <!-- Add any relevant URLs if needed -->
 
   <depend>builtin_interfaces</depend>
   <depend>rosidl_default_generators</depend>
