@@ -39,9 +39,8 @@ protected:
     joint_state_sub_ =
         rtest::findSubscription<sensor_msgs::msg::JointState>( node_, "/joint_states" );
     pub_mock_ = rtest::findPublisher<AutonomyMode>( node_, "/autonomy_mode" );
-    // Use the 2-arg overload to avoid rtest's slash-stripping bug in the dispatcher overload
-    service_mock_ = rtest::findServiceClient<ListControllers>(
-        node_->get_fully_qualified_name(), "/controller_manager/list_controllers" );
+    service_mock_ =
+        rtest::findServiceClient<ListControllers>( node_, "/controller_manager/list_controllers" );
   }
 
   controller_manager_msgs::msg::ControllerManagerActivity makeActivity( const std::string &name,

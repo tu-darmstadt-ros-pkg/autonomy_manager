@@ -32,10 +32,10 @@ flowchart TB
 
     UP -->|"publish"| AT[/"autonomy_mode\n(AutonomyMode)"/]
     UP --> RT
-    RT -->|"publish"| OT[/"operating_mode\n(String)"/]
+    RT -->|"publish"| OPM[/"operating_mode\n(String)"/]
 
     style AT fill:#4a9,stroke:#333,color:#fff
-    style OT fill:#4a9,stroke:#333,color:#fff
+    style OPM fill:#4a9,stroke:#333,color:#fff
 ```
 
 Each monitor independently evaluates its inputs and reports a `ModeWithContext` containing:

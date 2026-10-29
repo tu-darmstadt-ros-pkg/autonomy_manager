@@ -31,8 +31,11 @@ public:
 
   /// Access monitors for testing
   TopicMonitor *topicMonitor() { return topic_monitor_.get(); }
+
   EStopMonitor *estopMonitor() { return estop_monitor_.get(); }
+
   ActionMonitor *actionMonitor() { return action_monitor_.get(); }
+
   ControllerMonitor *controllerMonitor() { return controller_monitor_.get(); }
 
 private:

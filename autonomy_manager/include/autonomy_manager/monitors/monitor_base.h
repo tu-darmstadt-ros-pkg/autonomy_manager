@@ -22,6 +22,7 @@ class MonitorBase
 {
 public:
   explicit MonitorBase( rclcpp::Node::SharedPtr node ) : node_( std::move( node ) ) { }
+
   virtual ~MonitorBase() = default;
 
   /// Load parameters from the node and create subscriptions.
